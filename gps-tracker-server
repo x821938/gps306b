@@ -18,13 +18,15 @@ use DBI;
 use Time::HiRes qw( usleep );
 use Config::Simple;
 
-my ($numArgs,$cfg,$db,$dbUser,$dbPass,$logDir);
+my ($numArgs,$cfg,$db,$dbUser,$dbPass,$logDir,$listenPort,$listenIP);
 
 $cfg=new Config::Simple(filename=>"gps.config");
 $db=$cfg->param("mysql.db");
 $dbUser=$cfg->param("mysql.user");
 $dbPass=$cfg->param("mysql.password");
 $logDir=$cfg->param("log.logDir");
+$listenPort=$cfg->param("server.listenPort");
+$listenIP=$cfg->param("server.listenIP");
 
 
 $numArgs = $#ARGV + 1;
@@ -54,13 +56,13 @@ sub networkListen {
 
 	$| = 1;
 
-	logwrite ( "SOC", "Server waiting for client connection on port TCP port 15551", 0 );
+	logwrite ( "SOC", "Server waiting for client connection on port TCP port $listenPort", 0 );
 
 	# Wait for new incoming connections. When it closes, just wait for the next.
 	while(1)
 	{
 		# Set up a new tcp socket
-		$socket = new IO::Socket::INET ( LocalHost => '0.0.0.0', LocalPort => '15551', Proto => 'tcp', Listen => 5, Reuse => 1 );
+		$socket = new IO::Socket::INET ( LocalHost => $listenIP, LocalPort => $listenPort, Proto => 'tcp', Listen => 5, Reuse => 1 );
 		$client_socket = $socket->accept();
 		$client_address = $client_socket->peerhost();
 		$client_port = $client_socket->peerport();

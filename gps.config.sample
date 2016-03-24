@@ -12,3 +12,8 @@
 
 [log]
 	logDir=/home/gpsuser/gps-tracker/log/
+
+[server]
+	listenIP=0.0.0.0
+	listenPort=11111
+

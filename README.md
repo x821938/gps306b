@@ -36,7 +36,7 @@ clearXXXXXX (erase SD-card, i think. Bad documentation)
 
 apnXXXXXX internet (Telenor APN)
 gprsXXXXXX,1,1 (TCP mode, server does need to reply, makes communication very reliable. If you want to use simple UDP-listener change to ,0,0)
-adminipXXXXXX QQQ.RRR.SSS.TTT 15551 (my server and port 15551)
+adminipXXXXXX QQQ.RRR.SSS.TTT 11111 (my server and port 11111)
 gprsXXXXXXX (Turn on GPRS mode)
 
 obdiiXXXXXX 1 (Sends OBD info in both single and multi tracking, important if you want to record RPM,battery voltage and engine temperature)
