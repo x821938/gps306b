@@ -5,23 +5,23 @@ Please let me know if you can get this working - it's also great feedback if my 
 
 ### Device bought:
 Not from here, but excatly the same device.
-[http://www.aliexpress.com/store/product/gps-Tracker-GPS306B-SMS-Real-time-tracking-2-4G-Attendance-management-Plug-Play-SOS-Alarm-Truck/530436_1889292868.html]
+http://www.aliexpress.com/store/product/gps-Tracker-GPS306B-SMS-Real-time-tracking-2-4G-Attendance-management-Plug-Play-SOS-Alarm-Truck/530436_1889292868.html
 
 ### Install instructions
-1) Setup device via SMS. See instructions further down.
-2) Setup datebase in mysql by running sql script in: gps.createdb
-3) copy gps.config.sample to gps.config
-4) Edit gps.config for your needs
-5) Create log directory according to config.file
-6) Run gps-tracker-server.
-7) Setup a cron job that calls gps-mailday. This will send an email with trip-details daily.
+1. Setup device via SMS. See instructions further down.
+2. Setup datebase in mysql by running sql script in: gps.createdb
+3. copy gps.config.sample to gps.config
+4. Edit gps.config for your needs
+5. Create log directory according to config.file
+6. Run gps-tracker-server.
+7. Setup a cron job that calls gps-mailday. This will send an email with trip-details daily.
    Example: gps-mailday $(date --date='yesterday' +"%Y-%m-%d") 123456789123456 user@domain.org
 
 ### Estimated GPRS usage:
-Logging every 30 sec
-Tracker packets : 130 Bytes
-OBD packets: 130 bytes
-Max usage/month = (130 bytes *2)*2*60*24*31 = 23 Megs/month. If driving all the time!
+* Logging every 30 sec
+* Tracker packets : 130 Bytes
+* OBD packets: 130 bytes
+* Max usage/month = (130 bytes *2)*2*60*24*31 = 23 Megs/month. If driving all the time!
 
 ### GPS306B Setup via SMS:
 
@@ -45,8 +45,8 @@ save030s***nXXXXXX (Enables databuffering to SD-card when device without GPRS, a
 angleXXXXXX 010 (Makes a much smoother road-snapping when turning. This does not apply to SD-card data, only live data)
 ```
 
-If you want to wake up the device, you can send "checkXXXXXX" - it will make the device send data for the next 5 minutes.
-If you are totally lost and can´t find your car in a parking lot, send "fix030s001nXXXXXX", then you will get i SMS with coordinates and link to google maps :)
+* If you want to wake up the device, you can send "checkXXXXXX" - it will make the device send data for the next 5 minutes.
+* If you are totally lost and can´t find your car in a parking lot, send "fix030s001nXXXXXX", then you will get i SMS with coordinates and link to google maps :)
 
 
 
