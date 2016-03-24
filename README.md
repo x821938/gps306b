@@ -23,7 +23,7 @@ http://www.aliexpress.com/store/product/gps-Tracker-GPS306B-SMS-Real-time-tracki
 * Logging every 30 sec
 * Tracker packets : 130 Bytes
 * OBD packets: 130 bytes
-* Max usage/month = (130 bytes *2)*2*60*24*31 = 23 Megs/month. If driving all the time!
+* Max usage/month = (130 bytes x 2) x 2 x 60 x 24 x 31 = 23 Megs/month. If driving all the time!
 
 ### GPS306B Setup via SMS:
 
