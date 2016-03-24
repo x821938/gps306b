@@ -1,0 +1,48 @@
+create database gps;
+use gps;
+
+CREATE TABLE `tracker` (
+    `id` INTEGER NULL AUTO_INCREMENT DEFAULT NULL,
+    `imei` BIGINT NULL DEFAULT NULL,
+    `type` VARCHAR(10 ) NULL DEFAULT NULL ,
+    `gpstime` DATETIME NULL DEFAULT NULL,
+    `gpsfix` VARCHAR(1) NULL DEFAULT NULL,
+    `latgoogle` DECIMAL(10 , 6) NULL DEFAULT NULL,
+    `longgoogle` DECIMAL(10 , 6) NULL DEFAULT NULL,
+    `speed` DECIMAL(6 , 1) NULL DEFAULT NULL,
+    `odo` INTEGER NULL DEFAULT NULL,
+    `acc` TINYINT(1) NULL DEFAULT NULL,
+    `heading` DECIMAL( 5, 2) NULL DEFAULT NULL,
+    `updated` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY ( `id`)
+);
+
+CREATE TABLE `obd` (
+    `id` INTEGER NULL AUTO_INCREMENT DEFAULT NULL,
+    `imei` BIGINT NULL DEFAULT NULL,
+    `gpstime` DATETIME NULL DEFAULT NULL,
+    `odo` INTEGER NULL DEFAULT NULL,
+    `speed` INTEGER NULL DEFAULT NULL,
+    `pload` DECIMAL(4,2 ) NULL DEFAULT NULL ,
+    `temperature` INTEGER NULL DEFAULT NULL,
+    `atp` DECIMAL(4,2 ) NULL DEFAULT NULL ,
+    `rpm` INTEGER NULL DEFAULT NULL,
+    `battery` DECIMAL(4,2 ) NULL DEFAULT NULL ,
+    `updated` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY ( `id`)
+);
+
+CREATE TABLE `connection` (
+    `id` INTEGER NULL AUTO_INCREMENT DEFAULT NULL,
+    `type` VARCHAR(3 ) NULL DEFAULT NULL ,
+    `ip` VARCHAR(16 ) NULL DEFAULT NULL ,
+    `port` INTEGER NULL DEFAULT NULL,
+    `updated` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY ( `id`)
+);
+
+create user 'gpsuser' @'localhost' identified by 'xxxxxxxxxxxxxxxxxxxxxxxx' ;
+grant insert on gps.tracker to 'gpsuser' @'localhost' ;
+grant select on gps.tracker to 'gpsuser' @'localhost' ;
+grant insert on gps.obd to 'gpsuser' @'localhost' ;
+grant insert on gps.connection to 'gpsuser' @'localhost' ;
