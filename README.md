@@ -1,15 +1,16 @@
 ### Notes for installation
 
-This project has been made with perl. Very simple to get started. If anyone wants to clean up the code and make it more beautiful/readable, please send suggestions.
+This project has been made with perl. Very simple to get started tracking your car with the cheap GPS306B china car tracking device.  
+If anyone wants to clean up the code and make it more beautiful/readable, please send suggestions.
 Please let me know if you can get this working - it's also great feedback if my documentation is good enough :)
 
 ### Device bought:
-Not from here, but excatly the same device.
+Not from here, but excatly the same device:
 http://www.aliexpress.com/store/product/gps-Tracker-GPS306B-SMS-Real-time-tracking-2-4G-Attendance-management-Plug-Play-SOS-Alarm-Truck/530436_1889292868.html
 
 ### Install instructions
 1. Setup device via SMS. See instructions further down.
-2. Setup datebase in mysql by running sql script in: gps.createdb
+2. Setup datebase in mysql by running sql script: gps.createdb
 3. copy gps.config.sample to gps.config
 4. Edit gps.config for your needs
 5. Create log directory according to config.file
@@ -48,6 +49,6 @@ angleXXXXXX 010 (Makes a much smoother road-snapping when turning. This does not
 * If you want to wake up the device, you can send "checkXXXXXX" - it will make the device send data for the next 5 minutes.
 * If you are totally lost and can´t find your car in a parking lot, send "fix030s001nXXXXXX", then you will get i SMS with coordinates and link to google maps :)
 
-
-
-
+### Manual for the GPS306B Device.
+A badly written manaul is included in this repository. You can also find it here:   
+https://www.obd2-shop.eu/files/gps306a_b-user%20manual.pdf
