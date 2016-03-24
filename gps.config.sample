@@ -1,0 +1,14 @@
+[mysql]
+	db=gps
+	user=gpsuser
+	password=superlongsecretuserpassword
+
+[google]
+	googleHtmlFile=/home/gpsuser/gps-tracker/include.googlemaps.html
+	APIkey=superlonggogleapikey
+
+[mail]
+	from=gps306b@somedomain.org
+
+[log]
+	logDir=/home/gpsuser/gps-tracker/log/

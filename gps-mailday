@@ -1,0 +1,261 @@
+#!/usr/bin/perl -w
+#
+# GPS306B Mailing script by Alex Jensen. V0.7
+# Usage: gps-mailday <yyyy-mm-dd> <IMEI> <emailaddr>
+#
+# Traverse gps data in mysql and generates an email with a gpx track file and a google map.
+# In the message body is also generated a list of all the places the car had a stop - linking to google maps. 
+
+use strict;
+use warnings;
+
+use MIME::Lite;
+use DBI;
+use LWP::Simple;
+use JSON qw( decode_json );
+use POSIX;
+use Time::HiRes qw( usleep );
+use Config::Simple;
+
+my ($engineStartedMinutes,$firstSeenOdo,$numArgs,$date,$imei,$email,$dbh,$sth,$gpsTime,$latGoogle,$longGoogle,$acc,$odo,$gpxFileContent,@eventList,$lastEngineStopTime,$lastEngineStartTime,$lastAccState,$lastSeenOdo,$odoAtEngineStart,$prevCoordinates,$mailContent,@trackerEntries,$mapHtmlFile,$cfg,$db,$dbUser,$dbPass,$googleHtmlFile,$APIkey,$mailFrom);
+
+$cfg=new Config::Simple(filename=>"gps.config");
+$db=$cfg->param("mysql.db");
+$dbUser=$cfg->param("mysql.user");
+$dbPass=$cfg->param("mysql.password");
+$googleHtmlFile=$cfg->param("google.googleHtmlFile");
+$APIkey=$cfg->param("google.APIkey");
+$mailFrom=$cfg->param("mail.from");
+
+$numArgs = $#ARGV + 1;
+if ($numArgs == 3) {
+	$date=$ARGV[0];
+	$imei=$ARGV[1];
+	$email=$ARGV[2];
+
+	# Get data from mysql
+	$dbh = DBI->connect( "dbi:mysql:dbname=$db","$dbUser","$dbPass" ) or die "Could not connect to database";
+	$sth = $dbh->prepare( "SELECT * FROM tracker where imei=$imei and date(gpstime)='$date' order by gpstime" ) or die "Could not prepare query";
+	$sth->execute() or die "Could not execute query";
+	$sth->bind_col( 4, \$gpsTime );
+	$sth->bind_col( 6, \$latGoogle );
+	$sth->bind_col( 7, \$longGoogle );
+	$sth->bind_col( 9, \$odo );
+	$sth->bind_col( 10, \$acc );
+
+	$lastEngineStopTime = "00:00:00";
+	$lastEngineStartTime = "00:00:00";
+	$lastAccState = 0;
+	$firstSeenOdo = 0;
+	$engineStartedMinutes = 0;
+
+	# traverse each row returned from mysql and build eventlist and gpx-file
+	while ( $sth->fetch ) {
+		$gpsTime=substr($gpsTime,11,8);
+
+		$lastSeenOdo = $odo ? $odo : $lastSeenOdo; # Odo information from device is not reliable, therefore we keep on to the last valid reading and use that later on.
+		$firstSeenOdo = ($odo && $firstSeenOdo == 0) ? $odo : $firstSeenOdo; #Find first odo reading, for using later for total km driven in the day.
+
+		$odoAtEngineStart = $odoAtEngineStart ? $odoAtEngineStart : $lastSeenOdo;
+
+		# Save all tracker entries for further processing
+		push @trackerEntries, [ $latGoogle, $longGoogle, $gpsTime, $acc ];
+
+		# Keep a track on engine starts and engine stops and build a list of all parkings.
+		if ( $lastAccState == 0 && $acc ==1 ) {
+			#The engine has been started. Save the event that we are not parked anymore.
+			$prevCoordinates = $prevCoordinates ? $prevCoordinates : "$latGoogle,$longGoogle"; # If engine just turned on and there are no previous coordinates, then just take the cords after ignition 
+			$lastEngineStartTime = $gpsTime;
+			$odoAtEngineStart = $lastSeenOdo;
+			push @eventList, [ $lastEngineStopTime, $gpsTime, "parked", $prevCoordinates ];
+		} elsif ( $lastAccState == 1 && $acc == 0 ) {
+			#The engine has stopped. Save the event that we are not driving anymore
+			$lastEngineStopTime = $gpsTime;
+			push @eventList, [ $lastEngineStartTime, $gpsTime ,"drive", $lastSeenOdo-$odoAtEngineStart ];
+			$engineStartedMinutes += minute_diff ( $lastEngineStartTime, $gpsTime ) #Keep a counter of how long time the engine has been running
+		}
+		$lastAccState = $acc;
+		$prevCoordinates="$latGoogle,$longGoogle";
+	}
+	# The engine was last recorded stopping after traversing all entries. Finish list of stops with midnight
+	if ( $lastAccState == 0 ) {
+		push @eventList, [ $lastEngineStopTime, "23:59:59", "parked", $prevCoordinates ];
+	}
+
+	# Generate the itinary, gpxfile, google static map and send the email with gpx-file
+	$mapHtmlFile=generate_google_maps_image ( @trackerEntries );
+	$mailContent = generate_mail_body ( $engineStartedMinutes, $firstSeenOdo, $lastSeenOdo, @eventList );
+	$gpxFileContent = build_gpx_file ( @trackerEntries );
+	send_email ($email, $gpxFileContent, $mailContent, $mapHtmlFile, $date);
+} else {
+	die("USAGE: gps-mailday <yyyy-mm-dd> <IMEI> <emailaddr>\n");
+}
+
+#-------------------------------------------------------------------
+sub minute_diff {
+	my $start = shift;
+	my $end = shift;
+
+	my ($startSec, $endSec, $minuteDiff);
+
+	$startSec = substr($start,0,2)*3600 + substr($start,3,2)*60 + substr($start,6,2); 
+	$endSec = substr($end,0,2)*3600 + substr($end,3,2)*60 + substr($end,6,2); 
+	$minuteDiff = int( (($endSec-$startSec)/60) +0.5 ) ;
+
+	return $minuteDiff;
+}
+
+
+#-------------------------------------------------------------------
+sub generate_google_maps_image {
+	my @trackerEntries = @_;
+	my ($trackerEntry,$acc,$lastAcc,$coordinateList,$fh,$row,$htmlOut,$lastCoordinate,$markerList);
+	$markerList = "";
+	$lastAcc = 0;
+
+	$coordinateList = "";
+	foreach $trackerEntry (@trackerEntries) {
+		$acc=$trackerEntry->[3];
+		if ($acc == 1) {	
+			$coordinateList .= '{lat: ' . $trackerEntry->[0] . ', lng: ' . $trackerEntry->[1] . '},' . "\n";
+			$lastCoordinate = '{lat: ' . $trackerEntry->[0] . ', lng: ' . $trackerEntry->[1] . '}'; 
+			$lastAcc = 1;
+		} else {
+			if ($lastAcc == 1) {
+				#Engine was just turned off
+				$markerList .= 'var marker = new google.maps.Marker({ position: {lat: ' . $trackerEntry->[0] . ', lng: ' . $trackerEntry->[1] . '}, map: map, title: "Parking" });'. "\n";
+			}
+			$lastAcc = 0;
+		}
+	}
+
+	$htmlOut = "";
+	open( $fh, '<:encoding(UTF-8)', $googleHtmlFile );
+	while (my $row = <$fh>) {
+		$row =~ s/REPLACECENTER/$lastCoordinate/g;
+		$row =~ s/REPLACECOORDINATES/$coordinateList/g;
+		$row =~ s/REPLACEMARKERS/$markerList/g;
+		$row =~ s/REPLACEAPIKEY/$APIkey/g;
+		$htmlOut .= $row;
+	}
+
+	return $htmlOut;
+}
+
+
+
+#-------------------------------------------------------------------
+sub generate_mail_body {
+	my $engineStartedMinutes = shift;
+	my $odoStart = shift;
+	my $odoEnd = shift;
+	my @eventList = @_;
+
+	my ($event,$mailContent,$start,$end,$kilometers,$address,$coordinates,$driven);
+	$driven=$odoEnd-$odoStart;
+
+	$mailContent = '<html><head><style>
+				td { padding-left : 20px; }
+			</style></head><body>';
+	$mailContent .= "<body><p>Please see attached gpx-file to get the complete drive...</p><h3>Itinary:</h3><table>";
+
+	foreach $event (@eventList)
+	{
+		$start = $event->[0];
+		$end = $event->[1];
+
+		if ( $event->[2] eq "parked" ) {
+			$coordinates = $event->[3];
+			$address = get_postal_address ($coordinates);
+			$mailContent .= "<tr><td>$start</td><td>$end</td><td>Parking</td><td>$address</td><td><a href=\"https://maps.google.com/?q=$coordinates\">map</a></td></tr>\n";
+		} elsif ( $event->[2] eq "drive" ) {
+			$kilometers = $event->[3];
+			$mailContent .= "<tr><td>$start</td><td>$end</td><td>Driving</td><td>$kilometers kilometers</td><td></td></tr>\n";
+		}
+	}	
+	$mailContent .= "</table><p>Total kilometers this day (ODO $odoStart to $odoEnd): $driven km</p>\n";
+	$mailContent .= "<p>Engine runtime this day: $engineStartedMinutes minutes</p>\n</body></html>";
+
+	return $mailContent;
+}
+
+
+#-------------------------------------------------------------------
+sub build_gpx_file {
+	my @trackerEntries = @_;
+	my ($trackerList,$trackerEntry,$latgoogle,$longgoogle,$time,$acc);
+
+	$trackerList  =  "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+	$trackerList .= "<gpx creator=\"gps306b\" version=\"1.0\" xmlns=\"http://www.topografix.com/GPX/1/0\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" ";
+	$trackerList .= "xsi:schemaLocation=\"http://www.topografix.com/GPX/1/0 http://www.topografix.com/GPX/1/0/gpx.xsd\">\n";
+	$trackerList .= "\t<trk>\n";
+	$trackerList .= "\t\t<name><![CDATA[Track from GPS306B device]]></name>\n";
+	$trackerList .= "\t\t\t<trkseg><!-- TZ: 3600 -->\n"; 
+
+	foreach $trackerEntry (@trackerEntries) {
+		$latgoogle = $trackerEntry->[0];
+		$longgoogle = $trackerEntry->[1];
+		$time = $trackerEntry->[2];
+		$time =~ s/ /T/g;
+		$time .= "Z";
+		$acc = $trackerEntry->[3];
+		if ($acc == 1) {
+			$trackerList .= "\t\t\t\t<trkpt lat=\"$latgoogle\" lon=\"$longgoogle\"><ele>0</ele><time>$time</time></trkpt>\n";
+		}
+	}
+
+	$trackerList .= "\t\t\t</trkseg>\n\t</trk>\n</gpx>\n";
+	return $trackerList;
+}
+
+
+#-------------------------------------------------------------------
+sub send_email
+{
+	my $msgObj;
+	my $email = shift;
+	my $filecontent = shift;
+	my $message = shift;
+	my $mapHtmlFile = shift;
+	my $recDate = shift;
+
+	$msgObj = MIME::Lite->new(
+			From     => $mailFrom,
+			To       => $email,
+			Subject  => "GPS tracker logs for $recDate",
+			Type     => 'multipart/mixed'
+			);
+                 
+	$msgObj->attach(
+			Type         => 'text/html',
+			Data         => $message 
+			);
+
+	$msgObj->attach(
+			Type         => 'text/html',
+			Data         => $mapHtmlFile,
+			Filename     => "$date-google-maps.html",
+			Disposition  => 'attachment'
+			);
+            
+	$msgObj->attach(
+			Type        => 'text/plain',
+			Filename    => "$date.gpx",
+			Disposition => 'attachment',
+			Data        => $filecontent
+			);
+
+	$msgObj->send;
+}
+
+
+#-------------------------------------------------------------------
+sub get_postal_address {
+	my $coordinates = shift;
+
+	my $webcontents = get("http://maps.google.com/maps/api/geocode/json?latlng=$coordinates");
+	my $decoded = decode_json($webcontents);
+	usleep(500000); # Make 0.5 sec delay between each lookup because you have to pay for fast lookups at google!
+	return $decoded->{'results'}[0]{'formatted_address'};
+}
+

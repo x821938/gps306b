@@ -1,0 +1,263 @@
+#!/usr/bin/perl -w
+#
+# GPS306G TCP server by Alex Jensen. V0.6
+#
+# This server collects incomming data from this cheap GPS306B device and:
+# 1) Writes the data to MysqlServer
+# 2) Logs everything to a daily logfile
+#
+# If this program is called with a filename as a parameter, it imports the data (from GPS306B SD-card), instead of listening on TCP port.
+
+use strict;
+use warnings;
+
+use IO::Socket;
+use Math::Round;
+use POSIX qw(strftime);
+use DBI;
+use Time::HiRes qw( usleep );
+use Config::Simple;
+
+my ($numArgs,$cfg,$db,$dbUser,$dbPass,$logDir);
+
+$cfg=new Config::Simple(filename=>"gps.config");
+$db=$cfg->param("mysql.db");
+$dbUser=$cfg->param("mysql.user");
+$dbPass=$cfg->param("mysql.password");
+$logDir=$cfg->param("log.logDir");
+
+
+$numArgs = $#ARGV + 1;
+if ($numArgs == 1) {
+	# We have been called with a parameter, that means that we have to import a file
+	importFile($ARGV[0]);
+} elsif ($numArgs == 0) {
+	# We have been called without parameters, that means that we should listen to incoming tcp connections 
+	networkListen();
+}
+
+sub importFile {
+	my $filename = shift;
+
+	open(my $fh, '<:encoding(UTF-8)', $filename) or die "Could not open file '$filename' $!";
+	logwrite ( "FIL", "Importing from file '$filename'", 0 );
+
+	while (my $row = <$fh>) {
+		chomp $row;
+		parsetelegram($row);
+	}
+	logwrite ( "FIL", "Finished importing file", 1 );
+}
+
+sub networkListen {
+	my ($socket,$client_socket,$client_address,$client_port,$telegram,$timeLastReceived,$data,$errorMsg);
+
+	$| = 1;
+
+	logwrite ( "SOC", "Server waiting for client connection on port TCP port 15551", 0 );
+
+	# Wait for new incoming connections. When it closes, just wait for the next.
+	while(1)
+	{
+		# Set up a new tcp socket
+		$socket = new IO::Socket::INET ( LocalHost => '0.0.0.0', LocalPort => '15551', Proto => 'tcp', Listen => 5, Reuse => 1 );
+		$client_socket = $socket->accept();
+		$client_address = $client_socket->peerhost();
+		$client_port = $client_socket->peerport();
+		logwrite ( "SOC", "Connection opened from $client_address:$client_port", 0 );
+		sqlwrite( "insert into connection (type,ip,port) values ('con','$client_address',$client_port)" );
+
+
+		$timeLastReceived=time;
+		$telegram = "";
+	
+		eval {
+			# Keep reading telegrams as long as the connection is open or we time out
+			while( (time-$timeLastReceived) < 120 ) {
+				$client_socket->recv($telegram, 1024, MSG_DONTWAIT);
+				if ($telegram) {
+					logwrite ( "SOC", "Received telegram", 0 ); 
+					$timeLastReceived=time;
+					# If the device announce itself, we send a load to get old buffered data
+					if ( $telegram =~ /##/ ) { 
+						$data = "LOAD";
+					} else {
+						$data = "OK";
+					}
+					parsetelegram($telegram); 
+
+					$client_socket->send($data);
+					logwrite ( "SOC", "Sent response: $data", 1 );
+				}
+				usleep(100000); #0.1 second
+				# Send keep alive every 20 sec
+				if (time % 20 == 0 ) {
+					$data = "ON";
+					$client_socket->send($data);
+					logwrite ( "SOC", "Sent ON keepalive packet", 0 );
+					usleep (1000000); # 1 sec
+				}
+		        }
+		};
+		if ($@) {
+			$errorMsg = $@;
+			$errorMsg =~ s/\n//g;
+			logwrite ( "ERR", "Socket error: $errorMsg" , 0 ); 
+		}
+
+		shutdown($client_socket, 2);
+		$socket->close();
+		undef $socket;
+		logwrite ( "SOC", "Client has disconnected or connection timed out", 1 );
+		sqlwrite( "insert into connection (type,ip,port) values ('dis','$client_address',$client_port)" );
+	}
+}
+
+#-----------------------------------------------------------
+# Each íncoming telegram is parsed with this function
+sub parsetelegram {
+	my $telegram=shift;
+	my (@telegramEntries,$telegramEntry,@fields,$numfields,$imei,$type,$gpstime,$gpsfix,$lat,$latdir,$latgoogle,$long,$longdir,$longgoogle,$speed,$odo,$odosql,$acc,$heading,$headingsql,$pload,$temperature,$atp,$rpm,$battery);
+
+	#Log everything in the RAW telegram
+	logwrite ( "RAW", $telegram, 0 );
+
+	# A telegram can consist of several messages separated by semicolon. Split it and traverse them.
+	@telegramEntries = split ";" , $telegram;
+	foreach $telegramEntry (@telegramEntries) {
+		$telegramEntry .= ",END";  # We add a last entry to the csv-line, just in case there are empty fields in the end. This is for counting the fields safely.
+
+		@fields = split "," , $telegramEntry;
+		$numfields = scalar @fields;
+		# We dont care about alive packages. We want real content
+		if ( $numfields > 4 ) {
+			$imei = substr( $fields[0], 5, length($fields[0])-5 );
+			$type = $fields[1];
+
+			# Here is real gps tracker content, Parse the info we want
+			if ( ($type eq "tracker" || $type eq "acc on" || $type eq "acc off" || $type eq "ac alarm" || $type eq "qt") && ($numfields == 20) ) {
+				$gpstime    = $fields[2];
+				$gpsfix     = $fields[4];
+				$lat        = $fields[7];
+				$latdir     = $fields[8];
+				$latgoogle  = latconvert($lat,$latdir); # Google coordinates are needed later
+				$long       = $fields[9];
+				$longdir    = $fields[10];
+				$longgoogle = longconvert($long,$longdir); # Google coordinates are needed later
+				$speed      = $fields[11]; 
+				$speed      = $speed ? $speed*1.85 : 0; # Give us speed in kmh instead of knots
+				$odo        = $fields[17];
+				$odosql     = $odo ? $odo : "NULL"; # Just to please the sql when no odo measurement is returned
+				$acc        = $fields[14];
+				$heading    = $fields[12];
+				$headingsql = $heading ? $heading : "NULL"; #Just to please sql when no heading measurement is returned
+
+				# Save GPS content if we have gps signal, otherwise do nothing
+				if ($gpsfix eq "F") {
+					sqlwrite( "insert into tracker (imei,type,gpstime,gpsfix,latgoogle,longgoogle,speed,odo,acc,heading) values ($imei,'$type','$gpstime','$gpsfix',$latgoogle,$longgoogle,$speed,$odosql,$acc,$headingsql)" ); 
+				}
+			}
+			# Here is OBD information
+			if ( ($type eq "OBD") && ($numfields == 18) ) {
+				$gpstime     = $fields[2];
+				$odo         = $fields[3];
+				$speed       = $fields[7];
+				$pload       = $fields[8];
+				$pload       =~ s/%//g;     #Make it a float by removing percent sign
+				$pload       += 0;
+				$temperature = $fields[9];
+				$atp         = $fields[10];
+				$atp         =~ s/%//g;     #Make it a float by removing percent sign 
+				$atp	     += 0;
+				$rpm         = $fields[11];
+				$battery     = $fields[12];
+
+				# Save OBD content
+				sqlwrite( "insert into obd (imei,gpstime,odo,speed,pload,temperature,atp,rpm,battery) values ($imei,'$gpstime',$odo,$speed,$pload,$temperature,$atp,$rpm,$battery)" );
+			}
+		}
+	}
+}
+
+
+#-----------------------------------------------------------
+# Convert GPS306B latitude coordinates into google coordinates
+sub latconvert {
+	my $lat = shift;
+	my $latdir = shift;
+
+	my ($first,$rest,$aftercomma,$converted);
+
+	if ( length($lat) == 9 ) {
+		$first = substr( $lat, 0, 2)+0;
+		$rest = substr( $lat, 2, length($lat)-2 ) + 0;
+		$aftercomma = $rest/60;
+
+		$converted = nearest( 0.000001, $first+$aftercomma );
+		if ( $latdir eq "N" ) { return $converted; }
+		if ( $latdir eq "S" ) { return -$converted; }
+	}
+}
+
+
+#-----------------------------------------------------------
+# Convert GPS306B longitude coordinates into google coordinates
+sub longconvert {
+	my $long = shift;
+	my $longdir = shift;
+	my ($first,$rest,$aftercomma,$converted);
+
+	if ( length($long) == 10 ) {
+		$first = substr( $long, 0, 3 ) +0;
+		$rest = substr( $long, 3, length($long)-3 ) + 0;
+		$aftercomma = $rest/60;
+
+		$converted = nearest( 0.000001, $first+$aftercomma );
+		if ( $longdir eq "E" ) { return $converted; }
+		if ( $longdir eq "W" ) { return -$converted; }
+	}
+}
+
+
+#-----------------------------------------------------------
+# Do SQL inserts
+sub sqlwrite {
+	my $query = shift;
+	my ($dbh,$sth,$errorMsg);
+
+	eval {
+		logwrite ( "SQL", $query, 0 );
+		my $dbh = DBI->connect("dbi:mysql:dbname=$db","$dbUser","$dbPass",{ RaiseError => 1 },) or die $DBI::errstr;         
+		my $sth = $dbh->prepare($query);
+		$sth->execute();
+		$sth->finish();
+		$dbh->disconnect(); 
+	};
+	if ($@) { 
+                $errorMsg = $@;
+                $errorMsg =~ s/\n//g; # Remove trailing EOL because our logger puts one already
+		logwrite ( "ERR", "Error writing to sql: $@", 0 ); 
+	} 
+}
+
+#-----------------------------------------------------------
+# Do logging
+sub logwrite {
+	my $filename = $logDir . strftime ( "%Y-%m-%d", localtime ) . ".log";
+	my $category = shift;
+	my $line = shift;
+	my $separator = shift;
+	my $fh;
+
+	eval {
+		open ( my $fh, '>>', $filename );
+		print $fh  strftime ( "%H:%M:%S", localtime ) . "\t$category\t$line\n";
+		print strftime( "%H:%M:%S", localtime ) . "\t$category\t$line\n";
+		if ( $separator == 1 ) {
+			print $fh "----------------------------------------\n";
+			print "----------------------------------------\n";
+		}
+		close $fh;
+	};
+	if ($@) { print "Error writing to file: $@"; }; 
+}
