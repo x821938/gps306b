@@ -10,12 +10,13 @@ http://www.aliexpress.com/store/product/gps-Tracker-GPS306B-SMS-Real-time-tracki
 
 ### Install instructions
 1. Setup device via SMS. See instructions further down.
-2. Setup datebase in mysql by running sql script: gps.createdb
-3. copy gps.config.sample to gps.config
-4. Edit gps.config for your needs
-5. Create log directory according to config.file
-6. Run gps-tracker-server.
-7. Setup a cron job that calls gps-mailday. This will send an email with trip-details daily.
+2. Get a google API key for google maps javascipt. Here: https://console.developers.google.com/
+3. Setup datebase in mysql by running sql script: gps.createdb
+4. copy gps.config.sample to gps.config
+5. Edit gps.config for your needs
+6. Create log directory according to config.file
+7. Run gps-tracker-server.
+8. Setup a cron job that calls gps-mailday. This will send an email with trip-details daily.
    Example: gps-mailday $(date --date='yesterday' +"%Y-%m-%d") 123456789123456 user@domain.org
 
 ### Estimated GPRS usage:

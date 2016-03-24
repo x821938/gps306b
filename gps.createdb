@@ -41,7 +41,7 @@ CREATE TABLE `connection` (
     PRIMARY KEY ( `id`)
 );
 
-create user 'gpsuser' @'localhost' identified by 'xxxxxxxxxxxxxxxxxxxxxxxx' ;
+create user 'gpsuser' @'localhost' identified by 'superlongsecretuserpassword' ;
 grant insert on gps.tracker to 'gpsuser' @'localhost' ;
 grant select on gps.tracker to 'gpsuser' @'localhost' ;
 grant insert on gps.obd to 'gpsuser' @'localhost' ;
