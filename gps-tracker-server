@@ -18,13 +18,15 @@ use DBI;
 use Time::HiRes qw( usleep );
 use Config::Simple;
 
-my ($numArgs,$cfg,$db,$dbUser,$dbPass,$logDir,$listenPort,$listenIP);
+my ($numArgs,$cfg,$db,$dbUser,$dbPass,$logDir,$listenPort,$listenIP,$fileLogging,$consoleLogging);
 
 $cfg=new Config::Simple(filename=>"gps.config");
 $db=$cfg->param("mysql.db");
 $dbUser=$cfg->param("mysql.user");
 $dbPass=$cfg->param("mysql.password");
 $logDir=$cfg->param("log.logDir");
+$consoleLogging=$cfg->param("log.consoleLogging");
+$fileLogging=$cfg->param("log.fileLogging");
 $listenPort=$cfg->param("server.listenPort");
 $listenIP=$cfg->param("server.listenIP");
 
@@ -251,15 +253,17 @@ sub logwrite {
 	my $separator = shift;
 	my $fh;
 
-	eval {
-		open ( my $fh, '>>', $filename );
-		print $fh  strftime ( "%H:%M:%S", localtime ) . "\t$category\t$line\n";
+	if ( $fileLogging == 1 ) {
+		eval {
+			open ( my $fh, '>>', $filename );
+			print $fh  strftime ( "%H:%M:%S", localtime ) . "\t$category\t$line\n";
+			if ( $separator == 1 ) { print $fh "----------------------------------------\n"; }
+			close $fh;
+		};
+		if ($@) { print "Error writing to file: $@"; }; 
+	}
+	if ( $consoleLogging == 1 ) {
 		print strftime( "%H:%M:%S", localtime ) . "\t$category\t$line\n";
-		if ( $separator == 1 ) {
-			print $fh "----------------------------------------\n";
-			print "----------------------------------------\n";
-		}
-		close $fh;
-	};
-	if ($@) { print "Error writing to file: $@"; }; 
+		if ( $separator == 1 ) { print "----------------------------------------\n"; }
+	}
 }

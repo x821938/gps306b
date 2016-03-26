@@ -11,6 +11,8 @@
 	from=gps306b@somedomain.org
 
 [log]
+	consoleLogging=1
+	fileLogging=1
 	logDir=/home/gpsuser/gps-tracker/log/
 
 [server]
