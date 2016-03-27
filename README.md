@@ -4,6 +4,10 @@ This project has been made with perl. Very simple to get started tracking your c
 If anyone wants to clean up the code and make it more beautiful/readable, please send suggestions.
 Please let me know if you can get this working - it's also great feedback if my documentation is good enough :)
 
+### Screenshot from mailer
+![Alt text](.assets/email-example.png "Email Example")
+![Alt text](.assets/map-example.png "Google Maps Example")
+
 ### Device bought:
 Not from here, but excatly the same device:
 http://www.aliexpress.com/store/product/gps-Tracker-GPS306B-SMS-Real-time-tracking-2-4G-Attendance-management-Plug-Play-SOS-Alarm-Truck/530436_1889292868.html
